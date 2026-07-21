@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Rule Guide | EmergencyLens</title><link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"></head>
+<body>
+  <header class="site-header"><a class="brand" href="/"><span class="brand-mark">EL</span><span>EmergencyLens<small>Clinical rule-based decision support</small></span></a><nav><a href="/">New assessment</a><a href="/dashboard">Patient records</a><a class="active" href="/rules">Rule guide</a></nav></header>
+  <main class="page">
+    <section class="page-heading"><div><span class="eyebrow">Knowledge base</span><h1>How to verify all {{ rules|length }} rules</h1><p>Each row states the exact form conditions and resulting conclusion. Rules are grouped into {{ categories|length }} assessment categories.</p></div></section>
+    <section class="stats">{% for category in categories %}<div><strong>{{ rules|selectattr('category','equalto',category)|list|length }}</strong><span>{{ category }} rules</span></div>{% endfor %}</section>
+
+    <section class="explain-grid">
+      <div class="panel"><span class="eyebrow">Forward chaining</span><h2>Inference flow</h2><div class="flow"><span>Enter facts</span><b>→</b><span>Match rules</span><b>→</b><span>Build conflict set</span><b>→</b><span>Apply metarules</span><b>→</b><span>Fire winner</span><b>↺</b><span>Repeat until stable</span></div></div>
+      <div class="panel"><span class="eyebrow">Conflict resolution</span><h2>Metarule order</h2><ol class="meta"><li><b>Highest priority first</b><small>Safety-critical rules win.</small></li><li><b>Most specific first</b><small>More conditions win a tie.</small></li><li><b>Highest confidence first</b><small>Stronger knowledge wins next.</small></li><li><b>Lowest rule number</b><small>Deterministic final tie-break.</small></li></ol></div>
+    </section>
+
+    <section class="panel"><div class="section-title"><span>KB</span><div><h2>Complete IF–THEN knowledge base</h2><p>Use these conditions in New assessment, then inspect Rules fired and the trace.</p></div></div>
+      <div class="rule-table"><div class="rule-table-head"><span>Rule</span><span>Category</span><span>IF conditions</span><span>THEN conclusion</span><span>Rank</span></div>
+      {% for rule in rules %}<div class="rule-row"><strong>{{ rule.id }}<small>{{ rule.name }}</small></strong><span class="category">{{ rule.category }}</span><span>{{ rule.conditions }}</span><span>{{ rule.conclusion }}</span><span class="rank">P{{ rule.priority }}<small>S{{ rule.specificity }} · C{{ '%.0f'|format(rule.confidence * 100) }}%</small></span></div>{% endfor %}</div>
+    </section>
+
+    <section class="panel"><div class="section-title"><span>03</span><div><h2>Required conflict demonstrations</h2><p>These cases deliberately make several rules applicable in the same inference run.</p></div></div>
+      <div class="scenario-grid">
+        <article><b>Conflict A · Cardiac collapse</b><p>HR 160, BP 70, chest pain + sweating + left-arm pain, ICU available.</p><small>Expected chain: R1, R4, R13, R18, R8, R12, R17.</small></article>
+        <article><b>Conflict B · Pediatric stroke safety</b><p>Age 10, HR 160, BP 70, all three stroke signs, tPA allergy, ICU unavailable.</p><small>Expected chain includes R1, R6, R15, R16, R18, R14, R9.</small></article>
+        <article><b>Conflict C · Multi-trauma</b><p>O₂ 80, BP 75, severe bleeding, trauma + high impact.</p><small>Expected chain includes R5, R2, R24, R23, R16/R12, R7, R11, R10.</small></article>
+      </div>
+    </section>
+  </main>
+</body></html>
