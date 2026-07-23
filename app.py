@@ -1,184 +1,238 @@
+from dataclasses import dataclass
+from typing import Callable
+
 from flask import Flask, render_template, request, redirect, url_for
-from database import init_db, save_patient, save_diagnosis, get_all_patients
+
+from database import get_all_patients, get_patient, init_db, save_diagnosis, save_patient
+
 
 app = Flask(__name__)
+init_db()
 
-fired_log = []
 
-def run_expert_system(facts):
-    global fired_log
-    fired_log = []
+@dataclass(frozen=True)
+class Rule:
+    id: str
+    name: str
+    category: str
+    priority: int
+    confidence: float
+    conditions: str
+    conclusion: str
+    matches: Callable[[dict], bool]
+    apply: Callable[[dict], dict]
 
-    def log(rule_id):
-        fired_log.append(rule_id)
+    @property
+    def specificity(self):
+        return self.conditions.count(" AND ") + 1
 
-    def R1(f):
-        if f.get("heart_rate",0)>150 and f.get("blood_pressure",999)<80 and "patient_status" not in f:
-            f["patient_status"]="critical"; log("R1"); return True
 
-    def R2(f):
-        if f.get("oxygen_saturation",100)<85 and "respiratory_failure" not in f:
-            f["respiratory_failure"]=True; log("R2"); return True
+def missing(facts, key):
+    return key not in facts
 
-    def R3(f):
-        if f.get("temperature",0)>40 and f.get("consciousness")=="unresponsive" and "septic_shock_risk" not in f:
-            f["septic_shock_risk"]="high"; log("R3"); return True
 
-    def R4(f):
-        if f.get("chest_pain") and f.get("sweating") and f.get("left_arm_pain") and "cardiac_event_suspected" not in f:
-            f["cardiac_event_suspected"]=True; log("R4"); return True
+RULES = [
+    Rule("R1", "Circulatory collapse", "Relation", 100, .98,
+         "heart rate > 150 AND blood pressure < 80", "patient is critical",
+         lambda f: f["heart_rate"] > 150 and f["blood_pressure"] < 80 and missing(f, "patient_status"),
+         lambda f: {"patient_status": "critical", "circulatory_collapse": True}),
+    Rule("R2", "Respiratory failure", "Relation", 98, .97,
+         "oxygen saturation < 85", "respiratory failure is suspected",
+         lambda f: f["oxygen_saturation"] < 85 and missing(f, "respiratory_failure"),
+         lambda f: {"respiratory_failure": True}),
+    Rule("R3", "Septic shock risk", "Heuristic", 97, .94,
+         "temperature > 40 AND patient is unresponsive", "septic shock risk is high",
+         lambda f: f["temperature"] > 40 and f["consciousness"] == "unresponsive" and missing(f, "septic_shock_risk"),
+         lambda f: {"septic_shock_risk": "high"}),
+    Rule("R4", "Cardiac event pattern", "Relation", 93, .95,
+         "chest pain AND sweating AND left-arm pain", "cardiac event is suspected",
+         lambda f: f["chest_pain"] and f["sweating"] and f["left_arm_pain"] and missing(f, "cardiac_event_suspected"),
+         lambda f: {"cardiac_event_suspected": True}),
+    Rule("R5", "Hemorrhagic shock", "Relation", 99, .97,
+         "severe bleeding AND blood pressure < 90", "hemorrhagic shock is suspected",
+         lambda f: f["bleeding"] == "severe" and f["blood_pressure"] < 90 and missing(f, "hemorrhagic_shock"),
+         lambda f: {"hemorrhagic_shock": True}),
+    Rule("R6", "FAST stroke pattern", "Relation", 96, .96,
+         "facial drooping AND slurred speech AND arm weakness", "stroke is suspected",
+         lambda f: f["facial_drooping"] and f["speech_slurred"] and f["arm_weakness"] and missing(f, "stroke_suspected"),
+         lambda f: {"stroke_suspected": True}),
+    Rule("R7", "High-impact trauma", "Heuristic", 88, .88,
+         "trauma AND mechanism is high impact", "internal injury risk is high",
+         lambda f: f["trauma"] and f["mechanism"] == "high_impact" and missing(f, "internal_injury_risk"),
+         lambda f: {"internal_injury_risk": "high"}),
+    Rule("R8", "Cardiac investigation", "Recommendation", 78, .95,
+         "cardiac event is suspected", "perform an immediate ECG",
+         lambda f: f.get("cardiac_event_suspected") and missing(f, "recommend_ECG"),
+         lambda f: {"recommend_ECG": True}),
+    Rule("R9", "Stroke imaging", "Recommendation", 79, .96,
+         "stroke is suspected", "perform an urgent CT scan",
+         lambda f: f.get("stroke_suspected") and missing(f, "recommend_CT"),
+         lambda f: {"recommend_CT": True}),
+    Rule("R10", "Replace blood loss", "Recommendation", 84, .94,
+         "hemorrhagic shock is suspected", "prepare a blood transfusion",
+         lambda f: f.get("hemorrhagic_shock") and missing(f, "recommend_blood_transfusion"),
+         lambda f: {"recommend_blood_transfusion": True}),
+    Rule("R11", "Airway protection", "Directive", 86, .96,
+         "respiratory failure is suspected", "prepare immediate intubation",
+         lambda f: f.get("respiratory_failure") and missing(f, "recommend_intubation"),
+         lambda f: {"recommend_intubation": True}),
+    Rule("R12", "ICU admission", "Recommendation", 76, .92,
+         "patient is critical AND ICU is available", "admit patient to ICU",
+         lambda f: f.get("patient_status") == "critical" and f["icu_available"] and missing(f, "recommend_ICU"),
+         lambda f: {"recommend_ICU": True}),
+    Rule("R13", "Red alert escalation", "Directive", 90, .99,
+         "patient is critical", "set RED alert and notify senior doctor",
+         lambda f: f.get("patient_status") == "critical" and missing(f, "alert_level"),
+         lambda f: {"alert_level": "RED", "notify_senior_doctor": True}),
+    Rule("R14", "Pediatric escalation", "Directive", 85, .95,
+         "age < 12 AND patient is critical", "notify pediatric specialist",
+         lambda f: f["age"] < 12 and f.get("patient_status") == "critical" and missing(f, "notify_pediatric"),
+         lambda f: {"notify_pediatric": True}),
+    Rule("R15", "tPA allergy safety", "Directive", 101, .99,
+         "stroke is suspected AND patient has tPA allergy", "block tPA administration",
+         lambda f: f.get("stroke_suspected") and f["has_allergy"] and f["allergy_drug"].strip().lower() == "tpa" and missing(f, "tPA_blocked"),
+         lambda f: {"tPA_blocked": True, "administer_tPA": False}),
+    Rule("R16", "Unavailable ICU strategy", "Strategy", 89, .98,
+         "patient is critical AND ICU is unavailable", "arrange emergency transfer",
+         lambda f: f.get("patient_status") == "critical" and not f["icu_available"] and missing(f, "emergency_transfer"),
+         lambda f: {"emergency_transfer": True}),
+    Rule("R17", "Multiple-symptom strategy", "Strategy", 65, .85,
+         "two or more symptoms are present", "record vital signs before routine history",
+         lambda f: f["symptom_count"] >= 2 and missing(f, "vitals_first"),
+         lambda f: {"vitals_first": True}),
+    Rule("R18", "Critical triage bypass", "Directive", 87, .98,
+         "patient is critical", "bypass the routine triage queue",
+         lambda f: f.get("patient_status") == "critical" and missing(f, "skip_triage"),
+         lambda f: {"skip_triage": True}),
+    Rule("R19", "High fever", "Relation", 72, .90,
+         "temperature >= 39", "serious infection is suspected",
+         lambda f: f["temperature"] >= 39 and missing(f, "infection_risk"),
+         lambda f: {"infection_risk": "high"}),
+    Rule("R20", "Sepsis treatment", "Recommendation", 82, .91,
+         "septic shock risk is high", "start sepsis protocol and urgent antibiotics",
+         lambda f: f.get("septic_shock_risk") == "high" and missing(f, "recommend_sepsis_protocol"),
+         lambda f: {"recommend_sepsis_protocol": True}),
+    Rule("R21", "Hypothermia", "Relation", 73, .94,
+         "temperature < 35", "hypothermia is suspected",
+         lambda f: f["temperature"] < 35 and missing(f, "hypothermia"),
+         lambda f: {"hypothermia": True}),
+    Rule("R22", "Active warming", "Recommendation", 74, .93,
+         "hypothermia is suspected", "begin active warming",
+         lambda f: f.get("hypothermia") and missing(f, "recommend_warming"),
+         lambda f: {"recommend_warming": True}),
+    Rule("R23", "Life-threat escalation", "Strategy", 92, .96,
+         "respiratory failure OR hemorrhagic shock OR septic shock risk", "patient is critical",
+         lambda f: (f.get("respiratory_failure") or f.get("hemorrhagic_shock") or f.get("septic_shock_risk") == "high") and missing(f, "patient_status"),
+         lambda f: {"patient_status": "critical"}),
+    Rule("R24", "Multi-threat response", "Strategy", 95, .97,
+         "two or more life threats are suspected", "activate emergency response team",
+         lambda f: sum(bool(f.get(k)) for k in ("respiratory_failure", "hemorrhagic_shock", "cardiac_event_suspected", "stroke_suspected")) >= 2 and missing(f, "activate_emergency_team"),
+         lambda f: {"activate_emergency_team": True}),
+]
 
-    def R5(f):
-        if f.get("bleeding")=="severe" and f.get("blood_pressure",999)<90 and "hemorrhagic_shock" not in f:
-            f["hemorrhagic_shock"]=True; log("R5"); return True
 
-    def R6(f):
-        if f.get("facial_drooping") and f.get("speech_slurred") and f.get("arm_weakness") and "stroke_suspected" not in f:
-            f["stroke_suspected"]=True; log("R6"); return True
+def rule_rank(rule):
+    """Metarules: highest priority, then specificity, confidence, then rule ID."""
+    return (-rule.priority, -rule.specificity, -rule.confidence, int(rule.id[1:]))
 
-    def R7(f):
-        if f.get("trauma") and f.get("mechanism")=="high_impact" and "internal_injury_risk" not in f:
-            f["internal_injury_risk"]="high"; log("R7"); return True
 
-    def R8(f):
-        if f.get("cardiac_event_suspected") and "recommend_ECG" not in f:
-            f["recommend_ECG"]=True; log("R8"); return True
+def run_expert_system(initial_facts):
+    facts = dict(initial_facts)
+    fired = []
+    trace = []
 
-    def R9(f):
-        if f.get("stroke_suspected") and "recommend_CT" not in f:
-            f["recommend_CT"]=True
-            if f.get("has_allergy") and f.get("allergy_drug")=="tPA":
-                f["tPA_blocked"]=True
-            else:
-                f["administer_tPA"]=True
-            log("R9"); return True
-
-    def R10(f):
-        if f.get("hemorrhagic_shock") and "recommend_blood_transfusion" not in f:
-            f["recommend_blood_transfusion"]=True; log("R10"); return True
-
-    def R11(f):
-        if f.get("respiratory_failure") and "recommend_intubation" not in f:
-            f["recommend_intubation"]=True; log("R11"); return True
-
-    def R12(f):
-        if f.get("patient_status")=="critical" and f.get("icu_available") and "recommend_ICU" not in f:
-            f["recommend_ICU"]=True; log("R12"); return True
-
-    def R13(f):
-        if f.get("patient_status")=="critical" and "alert_level" not in f:
-            f["alert_level"]="RED"; f["notify_senior_doctor"]=True; log("R13"); return True
-
-    def R14(f):
-        if f.get("age",99)<12 and f.get("patient_status")=="critical" and "notify_pediatric" not in f:
-            f["notify_pediatric"]=True; log("R14"); return True
-
-    def R15(f):
-        if f.get("has_allergy") and f.get("administer_tPA") and f.get("allergy_drug")=="tPA" and "allergy_flagged" not in f:
-            f["administer_tPA"]=False; f["allergy_flagged"]=True; log("R15"); return True
-
-    def R16(f):
-        if f.get("patient_status")=="critical" and not f.get("icu_available") and "emergency_transfer" not in f:
-            f["emergency_transfer"]=True; log("R16"); return True
-
-    def R17(f):
-        if f.get("multiple_symptoms") and "vitals_first" not in f:
-            f["vitals_first"]=True; log("R17"); return True
-
-    def R18(f):
-        if f.get("patient_status")=="critical" and "skip_triage" not in f:
-            f["skip_triage"]=True; log("R18"); return True
-
-    rules = [R17, R18, R13, R14, R15, R16,
-             R1, R2, R3, R4, R5, R6, R7,
-             R8, R9, R10, R11, R12]
-
-    cycle = 0
-    while True:
-        fired = False
-        for rule in rules:
-            if rule(facts):
-                fired = True
-        if not fired:
+    for cycle in range(1, len(RULES) + 1):
+        conflict_set = [rule for rule in RULES if rule.id not in fired and rule.matches(facts)]
+        if not conflict_set:
             break
-        cycle += 1
-        if cycle > 20:
-            break
+        ranked = sorted(conflict_set, key=rule_rank)
+        winner = ranked[0]
+        new_facts = winner.apply(facts)
+        facts.update(new_facts)
+        fired.append(winner.id)
+        trace.append({
+            "cycle": cycle,
+            "candidates": [rule.id for rule in ranked],
+            "selected": winner.id,
+            "reason": f"priority {winner.priority}, specificity {winner.specificity}, confidence {winner.confidence:.0%}",
+            "added": new_facts,
+        })
 
-    if "alert_level" not in facts:
-        facts["alert_level"] = "GREEN"
-    if "patient_status" not in facts:
-        facts["patient_status"] = "stable"
+    facts.setdefault("alert_level", "GREEN")
+    facts.setdefault("patient_status", "stable")
+    return facts, fired, trace
 
-    return facts, fired_log
+
+def build_patient_data(form):
+    return {
+        "name": form.get("name", "Unknown").strip() or "Unknown",
+        "age": int(form.get("age", 30)),
+        "gender": form.get("gender", "male"),
+        "heart_rate": int(form.get("heart_rate", 80)),
+        "blood_pressure": int(form.get("blood_pressure", 120)),
+        "oxygen_saturation": int(form.get("oxygen_saturation", 98)),
+        "temperature": float(form.get("temperature", 37)),
+        "consciousness": form.get("consciousness", "responsive"),
+        "chest_pain": bool(form.get("chest_pain")),
+        "sweating": bool(form.get("sweating")),
+        "left_arm_pain": bool(form.get("left_arm_pain")),
+        "bleeding": form.get("bleeding", "none"),
+        "facial_drooping": bool(form.get("facial_drooping")),
+        "speech_slurred": bool(form.get("speech_slurred")),
+        "arm_weakness": bool(form.get("arm_weakness")),
+        "trauma": bool(form.get("trauma")),
+        "mechanism": form.get("mechanism", "none"),
+        "has_allergy": bool(form.get("has_allergy")),
+        "allergy_drug": form.get("allergy_drug", "").strip(),
+        "icu_available": bool(form.get("icu_available")),
+    }
+
+
+def facts_from_patient(patient):
+    facts = dict(patient)
+    symptom_keys = ("chest_pain", "sweating", "left_arm_pain", "facial_drooping",
+                    "speech_slurred", "arm_weakness", "trauma")
+    facts["symptom_count"] = sum(bool(patient[key]) for key in symptom_keys)
+    if patient["bleeding"] != "none":
+        facts["symptom_count"] += 1
+    return facts
 
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", rule_count=len(RULES))
 
 
 @app.route("/submit", methods=["POST"])
 def submit():
-    form = request.form
+    patient = build_patient_data(request.form)
+    facts, fired, trace = run_expert_system(facts_from_patient(patient))
+    patient_id = save_patient(patient)
+    save_diagnosis(patient_id, facts, fired, trace)
+    return redirect(url_for("result", patient_id=patient_id))
 
-    patient_data = {
-        "name":              form.get("name", "Unknown"),
-        "age":               int(form.get("age", 30)),
-        "gender":            form.get("gender", "male"),
-        "heart_rate":        int(form.get("heart_rate", 80)),
-        "blood_pressure":    int(form.get("blood_pressure", 120)),
-        "oxygen_saturation": int(form.get("oxygen_saturation", 98)),
-        "temperature":       float(form.get("temperature", 37)),
-        "consciousness":     form.get("consciousness", "responsive"),
-        "chest_pain":        1 if form.get("chest_pain") else 0,
-        "sweating":          1 if form.get("sweating") else 0,
-        "left_arm_pain":     1 if form.get("left_arm_pain") else 0,
-        "bleeding":          form.get("bleeding", "none"),
-        "facial_drooping":   1 if form.get("facial_drooping") else 0,
-        "speech_slurred":    1 if form.get("speech_slurred") else 0,
-        "arm_weakness":      1 if form.get("arm_weakness") else 0,
-        "trauma":            1 if form.get("trauma") else 0,
-        "has_allergy":       1 if form.get("has_allergy") else 0,
-        "allergy_drug":      form.get("allergy_drug", ""),
-        "icu_available":     1 if form.get("icu_available") else 0,
-    }
 
-    facts = {
-        "heart_rate":        patient_data["heart_rate"],
-        "blood_pressure":    patient_data["blood_pressure"],
-        "oxygen_saturation": patient_data["oxygen_saturation"],
-        "temperature":       patient_data["temperature"],
-        "consciousness":     patient_data["consciousness"],
-        "chest_pain":        bool(patient_data["chest_pain"]),
-        "sweating":          bool(patient_data["sweating"]),
-        "left_arm_pain":     bool(patient_data["left_arm_pain"]),
-        "bleeding":          patient_data["bleeding"],
-        "facial_drooping":   bool(patient_data["facial_drooping"]),
-        "speech_slurred":    bool(patient_data["speech_slurred"]),
-        "arm_weakness":      bool(patient_data["arm_weakness"]),
-        "trauma":            bool(patient_data["trauma"]),
-        "has_allergy":       bool(patient_data["has_allergy"]),
-        "allergy_drug":      patient_data["allergy_drug"],
-        "icu_available":     bool(patient_data["icu_available"]),
-        "age":               patient_data["age"],
-        "gender":            patient_data["gender"],
-        "multiple_symptoms": True,
-    }
-
-    facts, rules_fired = run_expert_system(facts)
-    patient_id = save_patient(patient_data)
-    save_diagnosis(patient_id, facts, rules_fired)
-
-    return redirect(url_for("dashboard"))
+@app.route("/result/<int:patient_id>")
+def result(patient_id):
+    patient = get_patient(patient_id)
+    if patient is None:
+        return render_template("not_found.html"), 404
+    return render_template("result.html", patient=patient)
 
 
 @app.route("/dashboard")
 def dashboard():
-    patients = get_all_patients()
-    return render_template("dashboard.html", patients=patients)
+    query = request.args.get("q", "").strip()
+    selected_id = request.args.get("patient_id", type=int)
+    patients = get_all_patients(query)
+    return render_template("dashboard.html", patients=patients, query=query, selected_id=selected_id)
+
+
+@app.route("/rules")
+def rules():
+    categories = sorted({rule.category for rule in RULES})
+    return render_template("rules.html", rules=RULES, categories=categories)
 
 
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True)

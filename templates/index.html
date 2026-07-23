@@ -1,210 +1,64 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Smart Hospital Emergency System</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: Arial, sans-serif; background: #f0f4f8; color: #333; }
-
-        header {
-            background: #1a237e; color: white;
-            padding: 20px 40px;
-            display: flex; align-items: center; gap: 15px;
-        }
-        header h1 { font-size: 1.5rem; }
-        header p { font-size: 0.85rem; opacity: 0.8; }
-
-        .container { max-width: 800px; margin: 40px auto; padding: 0 20px; }
-
-        .nav-link {
-            display: inline-block; margin-bottom: 20px;
-            color: #1a237e; text-decoration: none; font-size: 0.9rem;
-        }
-        .nav-link:hover { text-decoration: underline; }
-
-        .card {
-            background: white; border-radius: 12px;
-            padding: 30px; margin-bottom: 25px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-        }
-        .card h2 {
-            font-size: 0.95rem; text-transform: uppercase;
-            color: #1a237e; margin-bottom: 20px;
-            border-bottom: 2px solid #e8eaf6; padding-bottom: 10px;
-            letter-spacing: 0.05em;
-        }
-
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        .full { grid-column: 1 / -1; }
-
-        label { font-size: 0.85rem; color: #666; display: block; margin-bottom: 5px; }
-
-        input[type=text], input[type=number], select {
-            width: 100%; padding: 10px 12px;
-            border: 1px solid #ddd; border-radius: 8px;
-            font-size: 0.95rem; transition: border 0.2s;
-        }
-        input:focus, select:focus {
-            outline: none; border-color: #1a237e;
-            box-shadow: 0 0 0 3px rgba(26,35,126,0.1);
-        }
-
-        .checkbox-group {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-        }
-        .checkbox-item {
-            display: flex; align-items: center; gap: 10px;
-            background: #f8f9ff; padding: 12px;
-            border-radius: 8px; cursor: pointer;
-            border: 1px solid transparent; transition: all 0.2s;
-        }
-        .checkbox-item:hover { border-color: #1a237e; }
-        .checkbox-item input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
-        .checkbox-item label { margin: 0; color: #333; font-size: 0.9rem; cursor: pointer; }
-
-        .submit-btn {
-            width: 100%; padding: 15px;
-            background: #1a237e; color: white;
-            border: none; border-radius: 8px;
-            font-size: 1rem; cursor: pointer;
-            font-weight: bold; letter-spacing: 0.03em;
-            transition: background 0.2s;
-        }
-        .submit-btn:hover { background: #283593; }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EmergencyLens | Clinical RBES</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">EL</span><span>EmergencyLens<small>Clinical rule-based decision support</small></span></a>
+    <nav><a class="active" href="/">New assessment</a><a href="/dashboard">Patient records</a><a href="/rules">Rule guide</a></nav>
+  </header>
 
-<header>
-    <span style="font-size:2rem">🏥</span>
-    <div>
-        <h1>Smart Hospital Emergency System</h1>
-        <p>Rule-Based Expert System — AI Triage</p>
-    </div>
-</header>
+  <main class="page page-narrow">
+    <section class="hero">
+      <div><span class="eyebrow">Forward-chaining expert system</span><h1>Make emergency reasoning visible.</h1><p>Enter clinical observations. The engine evaluates {{ rule_count }} categorized IF–THEN rules, resolves conflicts with metarules, and records every inference.</p></div>
+      <div class="hero-stat"><strong>{{ rule_count }}</strong><span>auditable rules</span><a href="/rules">See how to test each rule →</a></div>
+    </section>
 
-<div class="container">
-    <a href="/dashboard" class="nav-link">📊 View Patient Dashboard →</a>
-
-    <form action="/submit" method="POST">
-
-        <div class="card">
-            <h2>👤 Patient Information</h2>
-            <div class="grid">
-                <div class="full">
-                    <label>Patient Name</label>
-                    <input type="text" name="name" placeholder="Full name" required>
-                </div>
-                <div>
-                    <label>Age</label>
-                    <input type="number" name="age" placeholder="Age" min="0" max="120" required>
-                </div>
-                <div>
-                    <label>Gender</label>
-                    <select name="gender">
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                    </select>
-                </div>
-                <div>
-                    <label>Consciousness Level</label>
-                    <select name="consciousness">
-                        <option value="responsive">Responsive</option>
-                        <option value="unresponsive">Unresponsive</option>
-                    </select>
-                </div>
-            </div>
+    <form class="assessment" action="/submit" method="post">
+      <section class="panel"><div class="section-title"><span>01</span><div><h2>Patient profile</h2><p>Basic details and current responsiveness.</p></div></div>
+        <div class="form-grid">
+          <label class="wide">Full name<input name="name" type="text" placeholder="e.g. Nimal Perera" required></label>
+          <label>Age<input name="age" type="number" min="0" max="120" value="35" required></label>
+          <label>Gender<select name="gender"><option>male</option><option>female</option><option>other</option></select></label>
+          <label class="wide">Consciousness<select name="consciousness"><option value="responsive">Responsive</option><option value="unresponsive">Unresponsive</option></select></label>
         </div>
+      </section>
 
-        <div class="card">
-            <h2>💓 Patient Vitals</h2>
-            <div class="grid">
-                <div>
-                    <label>Heart Rate (bpm)</label>
-                    <input type="number" name="heart_rate" placeholder="e.g. 155" required>
-                </div>
-                <div>
-                    <label>Blood Pressure (mmHg)</label>
-                    <input type="number" name="blood_pressure" placeholder="e.g. 78" required>
-                </div>
-                <div>
-                    <label>Oxygen Saturation (%)</label>
-                    <input type="number" name="oxygen_saturation" placeholder="e.g. 90" required>
-                </div>
-                <div>
-                    <label>Temperature (°C)</label>
-                    <input type="number" name="temperature" step="0.1" placeholder="e.g. 37.5" required>
-                </div>
-            </div>
+      <section class="panel"><div class="section-title"><span>02</span><div><h2>Vital observations</h2><p>Enter current measurements before running inference.</p></div></div>
+        <div class="form-grid four">
+          <label>Heart rate <small>bpm</small><input name="heart_rate" type="number" min="20" max="250" value="80" required></label>
+          <label>Blood pressure <small>systolic mmHg</small><input name="blood_pressure" type="number" min="30" max="250" value="120" required></label>
+          <label>Oxygen <small>SpO₂ %</small><input name="oxygen_saturation" type="number" min="30" max="100" value="98" required></label>
+          <label>Temperature <small>°C</small><input name="temperature" type="number" min="25" max="45" step="0.1" value="37" required></label>
         </div>
+      </section>
 
-        <div class="card">
-            <h2>🩺 Symptoms</h2>
-            <div class="checkbox-group">
-                <div class="checkbox-item">
-                    <input type="checkbox" name="chest_pain" id="chest_pain">
-                    <label for="chest_pain">Chest Pain</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" name="sweating" id="sweating">
-                    <label for="sweating">Sweating</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" name="left_arm_pain" id="left_arm_pain">
-                    <label for="left_arm_pain">Left Arm Pain</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" name="facial_drooping" id="facial_drooping">
-                    <label for="facial_drooping">Facial Drooping</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" name="speech_slurred" id="speech_slurred">
-                    <label for="speech_slurred">Speech Slurred</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" name="arm_weakness" id="arm_weakness">
-                    <label for="arm_weakness">Arm Weakness</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" name="trauma" id="trauma">
-                    <label for="trauma">Trauma</label>
-                </div>
-            </div>
-            <div style="margin-top: 15px;">
-                <label>Bleeding Level</label>
-                <select name="bleeding">
-                    <option value="none">None</option>
-                    <option value="mild">Mild</option>
-                    <option value="severe">Severe</option>
-                </select>
-            </div>
+      <section class="panel"><div class="section-title"><span>03</span><div><h2>Symptoms and trauma</h2><p>Select every observed condition; combinations activate more-specific rules.</p></div></div>
+        <div class="check-grid">
+          {% for name, label in [('chest_pain','Chest pain'),('sweating','Sweating'),('left_arm_pain','Left-arm pain'),('facial_drooping','Facial drooping'),('speech_slurred','Slurred speech'),('arm_weakness','Arm weakness'),('trauma','Trauma')] %}
+          <label class="check"><input type="checkbox" name="{{ name }}"><span>{{ label }}</span></label>
+          {% endfor %}
         </div>
-
-        <div class="card">
-            <h2>🏨 Resources & Patient History</h2>
-            <div class="grid">
-                <div class="checkbox-item">
-                    <input type="checkbox" name="icu_available" id="icu_available" checked>
-                    <label for="icu_available">ICU Bed Available</label>
-                </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" name="has_allergy" id="has_allergy">
-                    <label for="has_allergy">Has Drug Allergy</label>
-                </div>
-                <div class="full">
-                    <label>Allergy Drug Name (if any)</label>
-                    <input type="text" name="allergy_drug" placeholder="e.g. tPA, penicillin">
-                </div>
-            </div>
+        <div class="form-grid top-gap">
+          <label>Bleeding<select name="bleeding"><option value="none">None</option><option value="mild">Mild</option><option value="severe">Severe</option></select></label>
+          <label>Trauma mechanism<select name="mechanism"><option value="none">None / not known</option><option value="low_impact">Low impact</option><option value="high_impact">High impact</option></select></label>
         </div>
+      </section>
 
-        <button type="submit" class="submit-btn">
-            🔍 Run Expert System Analysis
-        </button>
+      <section class="panel"><div class="section-title"><span>04</span><div><h2>Safety and resources</h2><p>Resource availability can change the recommended strategy.</p></div></div>
+        <div class="check-grid two">
+          <label class="check"><input type="checkbox" name="icu_available" checked><span>ICU bed available</span></label>
+          <label class="check"><input type="checkbox" name="has_allergy"><span>Known drug allergy</span></label>
+        </div>
+        <label class="standalone">Allergic drug<input name="allergy_drug" type="text" placeholder="Enter tPA to test the stroke safety rule"></label>
+      </section>
 
+      <div class="submit-row"><p>This is an educational prototype, not a substitute for clinical judgment.</p><button type="submit">Run inference engine <span>→</span></button></div>
     </form>
-</div>
-
+  </main>
 </body>
 </html>
