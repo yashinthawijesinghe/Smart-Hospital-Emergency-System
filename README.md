@@ -106,6 +106,10 @@ The knowledge base contains rules R1–R24. It covers:
 
 Open **Rule Guide** in the running application to see every rule's exact IF conditions, THEN conclusion, category, priority, specificity, confidence, and test inputs.
 
+For the complete written explanation of every input, firing condition, inferred fact,
+boundary value, downstream dependency, and demonstration case, see
+[Rules.md](Rules.md).
+
 ## Forward chaining
 
 The engine begins with facts entered by the user. It repeatedly:
